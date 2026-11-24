@@ -14,7 +14,7 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
-app = FastAPI(title="MultiTracker API", version="0.4.0")
+app = FastAPI(title="MultiTracker API", version="0.5.0")
 app.add_middleware(CORSMiddleware, allow_origins=["https://backroadops.github.io"], allow_methods=["GET"], allow_headers=["*"])
 _cache = OrderedDict()
 _token = {"value": None, "until": 0}
@@ -165,7 +165,7 @@ async def ais_loop():
     while True:
         try:
             async with connect("wss://stream.aisstream.io/v0/stream", compression="deflate", open_timeout=20, max_size=1048576) as ws:
-                await ws.send(json.dumps({"APIKey":ais_key(),"BoundingBoxes":[[[54,10],[66,31]]],"FilterMessageTypes":["PositionReport","StandardClassBPositionReport","ExtendedClassBPositionReport"]}))
+                await ws.send(json.dumps({"APIKey":ais_key(),"BoundingBoxes":[[[-90,-180],[90,180]]],"FilterMessageTypes":["PositionReport","StandardClassBPositionReport","ExtendedClassBPositionReport"]}))
                 async for raw in ws:
                     try:
                         event = json.loads(raw)
@@ -181,11 +181,13 @@ async def ais_loop():
                             continue
                         sog,cog = p.get("Sog"),p.get("Cog")
                         now = time.time()
+                        ais_positions.pop(mmsi,None)
                         ais_positions[mmsi] = (now,{"id":"ais-"+mmsi,"mmsi":mmsi,"type":"ship","label":str(meta.get("ShipName") or "").strip() or mmsi,"latitude":lat,"longitude":lon,"speed_kmh":round(sog*1.852,1) if isinstance(sog,(int,float)) and 0<=sog<102.3 else None,"heading":cog if isinstance(cog,(int,float)) and 0<=cog<360 else None,"source":"AISStream","timestamp":datetime.fromtimestamp(now,timezone.utc).isoformat()})
                         ais_status = "receiving"
                         delay = 5
-                        if len(ais_positions)>15000:
-                            ais_positions.pop(min(ais_positions,key=lambda k:ais_positions[k][0]),None)
+                        if len(ais_positions)>30000:
+                            for old in list(ais_positions)[:1000]:
+                                ais_positions.pop(old,None)
                     except (ValueError,TypeError,AttributeError):
                         continue
         except Exception as exc:
@@ -207,3 +209,29 @@ def nearby_ships(lat,lon,radius):
         if 3440.065*2*math.asin(math.sqrt(min(1,max(0,h))))<=radius:
             result.append(v)
     return result
+
+@app.get("/map/vehicles")
+async def map_vehicles(south: float = Query(ge=-90,le=90), north: float = Query(ge=-90,le=90), west: float = Query(ge=-180,le=180), east: float = Query(ge=-180,le=180)):
+    if south >= north:
+        raise HTTPException(400,"Invalid latitude bounds")
+    width = (east-west)%360 or 360
+    lat = (south+north)/2
+    lon = (west+width/2+180)%360-180
+    def inside(v):
+        return south<=v["latitude"]<=north and (v["longitude"]-west)%360<=width
+    ships = [v for at,v in list(ais_positions.values()) if time.time()-at<=600 and inside(v)]
+    aircraft = []
+    air_status = "unavailable"
+    if width<=12 and north-south<=8:
+        radius = min(250,max(25,math.ceil(math.hypot((north-south)*30,width*30*math.cos(math.radians(lat)))/25)*25))
+        try:
+            async with _lock:
+                aircraft = await fetch_aircraft(lat,lon,radius,(round(lat,1),round(lon,1),radius))
+            air_status = "regional"
+        except HTTPException:
+            pass
+    else:
+        air_status = "cached_regions_only"
+        aircraft = [v for at,items in list(_cache.values()) if time.monotonic()-at<180 for v in items]
+    unique = {v["id"]:v for v in aircraft if inside(v)}
+    return {"vehicles":list(unique.values())+ships,"aircraft_status":air_status,"ais_status":ais_status,"ship_limit":30000}
