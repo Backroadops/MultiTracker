@@ -95,6 +95,13 @@ async def opensky(client, lat, lon, radius):
     dx = min(180, delta / max(0.01, math.cos(math.radians(lat))))
     headers = {}
     cid, secret = os.getenv("OPENSKY_CLIENT_ID"), os.getenv("OPENSKY_CLIENT_SECRET")
+    if not secret:
+        try:
+            with open("/etc/secrets/OPENSKY_CLIENT_SECRET", encoding="utf-8") as secret_file:
+                secret = secret_file.read().strip()
+            log.info("OpenSky secret file configured: %s", bool(secret))
+        except OSError:
+            log.info("OpenSky secret file unavailable")
     log.info("OpenSky credentials configured: client_id=%s client_secret=%s", bool(cid), bool(secret))
     if cid and secret:
         if time.monotonic() >= _token["until"]:
