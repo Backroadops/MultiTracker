@@ -95,14 +95,17 @@ async def opensky(client, lat, lon, radius):
     dx = min(180, delta / max(0.01, math.cos(math.radians(lat))))
     headers = {}
     cid, secret = os.getenv("OPENSKY_CLIENT_ID"), os.getenv("OPENSKY_CLIENT_SECRET")
+    log.info("OpenSky credentials configured: client_id=%s client_secret=%s", bool(cid), bool(secret))
     if cid and secret:
         if time.monotonic() >= _token["until"]:
             r = await client.post("https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token", data={"grant_type":"client_credentials","client_id":cid,"client_secret":secret})
             r.raise_for_status()
+            log.info("OpenSky OAuth token request succeeded: HTTP %s", r.status_code)
             t = r.json()
             _token.update(value=t["access_token"], until=time.monotonic()+max(0,int(t.get("expires_in",300))-30))
         headers["Authorization"] = "Bearer " + _token["value"]
     r = await client.get("https://opensky-network.org/api/states/all", headers=headers, params={"lamin":max(-90,lat-delta),"lamax":min(90,lat+delta),"lomin":max(-180,lon-dx),"lomax":min(180,lon+dx)})
+    log.info("OpenSky states response: HTTP %s, authenticated=%s, retry_after=%s", r.status_code, bool(headers), r.headers.get("Retry-After", "not supplied"))
     r.raise_for_status()
     result = []
     for a in r.json().get("states") or []:
