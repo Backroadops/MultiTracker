@@ -1,9 +1,11 @@
 import os
 import time
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
 app = FastAPI(title="MultiTracker API", version="0.1.0")
+app.add_middleware(CORSMiddleware, allow_origins=["https://backroadops.github.io"], allow_methods=["GET"], allow_headers=["*"])
 _cache = {"at": 0.0, "data": []}
 
 @app.get("/health")
@@ -22,7 +24,7 @@ async def vehicles(lat: float = Query(59.33, ge=-90, le=90), lon: float = Query(
             response.raise_for_status()
             payload = response.json()
     except (httpx.HTTPError, ValueError):
-        return _cache["data"] if _cache.get("key") == key else []
+        raise HTTPException(status_code=503, detail="ADS-B upstream unavailable")
     result = []
     for a in payload.get("ac", []):
         if not isinstance(a.get("lat"), (int, float)) or not isinstance(a.get("lon"), (int, float)):
@@ -32,7 +34,7 @@ async def vehicles(lat: float = Query(59.33, ge=-90, le=90), lon: float = Query(
             "type": "helicopter" if str(a.get("t", "")).upper().startswith(("H", "EC", "R44")) else "aircraft",
             "label": (a.get("flight") or a.get("r") or a.get("hex") or "Aircraft").strip(),
             "latitude": a["lat"], "longitude": a["lon"],
-            "speed_kmh": round(a.get("gs", 0) * 1.852, 1),
+            "speed_kmh": round(a["gs"] * 1.852, 1) if isinstance(a.get("gs"), (int, float)) else None,
             "heading": a.get("track"),
             "altitude_m": round(a["alt_baro"] * 0.3048) if isinstance(a.get("alt_baro"), (int, float)) else None,
             "source": "adsb.lol",
