@@ -3,6 +3,16 @@ on:
   push:
   workflow_dispatch:
 jobs:
+  backend-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/requirements.txt
+      - run: python -m compileall -q backend
+      - run: python -c "import sys; sys.path.insert(0, 'backend'); from main import app; assert app.title == 'MultiTracker API'"
   apk:
     runs-on: ubuntu-latest
     defaults:
@@ -15,10 +25,19 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - run: gradle :app:assembleDebug --stacktrace
+      - name: Build debug APK
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+        run: |
+          if [ -n "$BACKEND_URL" ]; then
+            gradle :app:assembleDebug -PbackendUrl="$BACKEND_URL" --stacktrace
+          else
+            gradle :app:assembleDebug --stacktrace
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: MultiTracker-debug-apk
