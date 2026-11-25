@@ -6,16 +6,15 @@ for(const [type,icon] of Object.entries(types)){const label=document.createEleme
 const map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/liberty',center:[18.06,59.33],zoom:6});map.addControl(new maplibregl.NavigationControl());
 function draw(){
  for(const t of Object.keys(types))counts[t].textContent=['aircraft','helicopter','ship'].includes(t)?String(data.filter(v=>v.type===t).length):'—';
- if(!map.isStyleLoaded()&&!map.getSource('live-ship'))return;
+ if(!map.getStyle()?.layers)return;
  for(const [group,test] of [['ship',v=>v.type==='ship'],['air',v=>v.type==='aircraft'||v.type==='helicopter']]){
  const id='live-'+group, color=group==='ship'?'#2563eb':'#087eaa';
  const geo={type:'FeatureCollection',features:data.filter(v=>test(v)&&enabled.has(v.type)&&Number.isFinite(v.longitude)&&Number.isFinite(v.latitude)).map(v=>({type:'Feature',geometry:{type:'Point',coordinates:[v.longitude,v.latitude]},properties:{...v,icon:types[v.type]}}))};
- if(map.getSource(id)){map.getSource(id).setData(geo);continue;}
- map.addSource(id,{type:'geojson',data:geo,cluster:true,clusterRadius:48,clusterMaxZoom:11});
- map.addLayer({id:id+'-cluster',type:'circle',source:id,filter:['has','point_count'],paint:{'circle-color':color,'circle-radius':['step',['get','point_count'],16,20,22,100,28],'circle-stroke-color':'white','circle-stroke-width':2}});
- map.addLayer({id:id+'-count',type:'symbol',source:id,filter:['has','point_count'],layout:{'text-field':['get','point_count_abbreviated'],'text-size':13},paint:{'text-color':'white'}});
- map.addLayer({id:id+'-point',type:'circle',source:id,filter:['!',['has','point_count']],paint:{'circle-radius':7,'circle-color':color,'circle-stroke-color':'white','circle-stroke-width':2}});
- map.addLayer({id:id+'-symbol',type:'symbol',source:id,filter:['!',['has','point_count']],layout:{'text-field':['get','icon'],'text-size':15,'text-allow-overlap':true}});
+ if(map.getSource(id)){map.getSource(id).setData(geo);}else map.addSource(id,{type:'geojson',data:geo,cluster:true,clusterRadius:48,clusterMaxZoom:11});
+ if(!map.getLayer(id+'-cluster'))map.addLayer({id:id+'-cluster',type:'circle',source:id,filter:['has','point_count'],paint:{'circle-color':color,'circle-radius':['step',['get','point_count'],16,20,22,100,28],'circle-stroke-color':'white','circle-stroke-width':2}});
+ if(!map.getLayer(id+'-count'))map.addLayer({id:id+'-count',type:'symbol',source:id,filter:['has','point_count'],layout:{'text-field':['get','point_count_abbreviated'],'text-size':13},paint:{'text-color':'white'}});
+ if(!map.getLayer(id+'-point'))map.addLayer({id:id+'-point',type:'circle',source:id,filter:['!',['has','point_count']],paint:{'circle-radius':7,'circle-color':color,'circle-stroke-color':'white','circle-stroke-width':2}});
+ if(!map.getLayer(id+'-symbol'))map.addLayer({id:id+'-symbol',type:'symbol',source:id,filter:['!',['has','point_count']],layout:{'text-field':['get','icon'],'text-size':15,'text-allow-overlap':true}});
  }
 }
 for(const group of ['ship','air']){
@@ -24,6 +23,7 @@ for(const group of ['ship','air']){
  map.on('click',id+'-point',e=>{const f=e.features[0],v=f.properties,info=document.createElement('div');info.textContent=(v.label||v.id)+' · '+v.type+' · '+(v.speed_kmh??'—')+' km/h · '+(v.source||'');new maplibregl.Popup().setLngLat(f.geometry.coordinates).setDOMContent(info).addTo(map);});
 }
 map.on('style.load',draw);
+map.on('idle',()=>{if(!map.getSource('live-air')||!map.getSource('live-ship'))draw();});
 let timer,controller;
 async function refresh(){
  const seq=++generation;
@@ -44,5 +44,5 @@ async function refresh(){
 map.on('moveend',()=>{clearTimeout(timer);timer=setTimeout(refresh,1500)});
 document.getElementById('world').onclick=()=>map.flyTo({center:[0,20],zoom:1});
 document.getElementById('theme').onclick=()=>{dark=!dark;map.setStyle('https://tiles.openfreemap.org/styles/'+(dark?'dark':'liberty'));document.getElementById('theme').textContent=dark?'Light map':'Dark map';};
-document.getElementById('connect').onclick=refresh;document.getElementById('sweden').onclick=()=>map.flyTo({center:[18.06,59.33],zoom:6});document.getElementById('gps').onclick=()=>navigator.geolocation.getCurrentPosition(p=>map.flyTo({center:[p.coords.longitude,p.coords.latitude],zoom:11}),e=>status.textContent=e.message);map.once("load",refresh);setInterval(()=>{if(!document.hidden)refresh()},60000);draw();
+document.getElementById('connect').onclick=refresh;document.getElementById('sweden').onclick=()=>map.flyTo({center:[18.06,59.33],zoom:6});document.getElementById('gps').onclick=()=>navigator.geolocation.getCurrentPosition(p=>map.flyTo({center:[p.coords.longitude,p.coords.latitude],zoom:11}),e=>status.textContent=e.message);map.once("load",()=>{draw();refresh()});setInterval(()=>{if(!document.hidden)refresh()},60000);draw();
 </script></body></html>
