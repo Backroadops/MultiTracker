@@ -1,31 +1,34 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MultiTracker</title><link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"><script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script><style>
-*{box-sizing:border-box}body{margin:0;background:#081d30;color:#e8ffff;font:15px system-ui}header{padding:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}h1{font-size:22px;margin:0}button,input{background:#18384a;color:white;border:1px solid #46717c;border-radius:8px;padding:9px}button{cursor:pointer}#map{height:calc(100dvh - 170px);min-height:300px}#filters{display:flex;flex-wrap:wrap;gap:12px;padding:8px 12px}#status{padding:8px 12px}#url{width:min(300px,70vw)}.marker{font-size:24px;cursor:pointer;text-shadow:0 0 5px white}.maplibregl-popup-content{color:#081d30}</style></head><body><header><svg width="44" height="44" viewBox="0 0 108 108"><rect width="108" height="108" rx="20" fill="#081d30"/><g fill="none" stroke="#4de8d4"><circle cx="54" cy="54" r="40"/><circle cx="54" cy="54" r="26"/><circle cx="54" cy="54" r="13"/><path d="M14 54H94M54 14V94M54 54L87 33"/></g><path fill="white" d="M54 25L58 43 77 54 77 59 58 54 58 69 65 75 65 79 54 75 43 79 43 75 50 69 50 54 31 59 31 54 50 43Z"/></svg><h1>MultiTracker <small>0.5.2</small></h1><button id="gps">My location</button><button id="sweden">Sweden</button><button id="world">Worldwide</button><button id="theme">Dark map</button><button id="connect">Refresh</button><details><summary>Advanced</summary><input id="url" value="https://multitracker-api.onrender.com" placeholder="Optional HTTPS backend URL"></details></header><div id="filters"></div><div id="status" role="status">Connecting to live feeds…</div><div id="map"></div><script>
+*{box-sizing:border-box}body{margin:0;background:#081d30;color:#e8ffff;font:15px system-ui}header{padding:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}h1{font-size:22px;margin:0}button,input{background:#18384a;color:white;border:1px solid #46717c;border-radius:8px;padding:9px}button{cursor:pointer}#map{position:relative}#vehicle-overlay{position:absolute;inset:0;z-index:20;pointer-events:none;overflow:hidden}#vehicle-overlay button{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;background:white;color:#075985;border:2px solid #075985;border-radius:20px;padding:3px 7px;font-size:20px;line-height:1.2}#map{height:calc(100dvh - 170px);min-height:300px}#filters{display:flex;flex-wrap:wrap;gap:12px;padding:8px 12px}#status{padding:8px 12px}#url{width:min(300px,70vw)}.marker{font-size:24px;cursor:pointer;text-shadow:0 0 5px white}.maplibregl-popup-content{color:#081d30}</style></head><body><header><svg width="44" height="44" viewBox="0 0 108 108"><rect width="108" height="108" rx="20" fill="#081d30"/><g fill="none" stroke="#4de8d4"><circle cx="54" cy="54" r="40"/><circle cx="54" cy="54" r="26"/><circle cx="54" cy="54" r="13"/><path d="M14 54H94M54 14V94M54 54L87 33"/></g><path fill="white" d="M54 25L58 43 77 54 77 59 58 54 58 69 65 75 65 79 54 75 43 79 43 75 50 69 50 54 31 59 31 54 50 43Z"/></svg><h1>MultiTracker <small>0.5.3</small></h1><button id="gps">My location</button><button id="sweden">Sweden</button><button id="world">Worldwide</button><button id="theme">Dark map</button><button id="connect">Refresh</button><details><summary>Advanced</summary><input id="url" value="https://multitracker-api.onrender.com" placeholder="Optional HTTPS backend URL"></details></header><div id="filters"></div><div id="status" role="status">Connecting to live feeds…</div><div id="render-count" style="padding:0 12px"></div><div id="map"></div><script>
 const types={aircraft:'✈',helicopter:'🚁',ship:'🚢',train:'🚆',bus:'🚌',other:'🚗'};
 const filters=document.getElementById('filters'),status=document.getElementById('status'),url=document.getElementById('url');let data=[],markers=[],generation=0,lastRequest=0,dark=false;const counts={};const colors={aircraft:"#087eaa",helicopter:"#a855f7",ship:"#2563eb",train:"#d97706",bus:"#15803d",other:"#64748b"};const enabled=new Set(Object.keys(types));
 for(const [type,icon] of Object.entries(types)){const label=document.createElement('label'),box=document.createElement('input');box.type='checkbox';box.checked=true;box.onchange=()=>{box.checked?enabled.add(type):enabled.delete(type);draw()};const count=document.createElement('span');counts[type]=count;label.append(box,icon+' '+type+' ',count);filters.append(label)}
 const map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/liberty',center:[18.06,59.33],zoom:6});map.addControl(new maplibregl.NavigationControl());
+const overlay=document.createElement('div');overlay.id='vehicle-overlay';map.getContainer().appendChild(overlay);
 function draw(){
  for(const t of Object.keys(types))counts[t].textContent=['aircraft','helicopter','ship'].includes(t)?String(data.filter(v=>v.type===t).length):'—';
- markers.forEach(m=>m.remove());markers=[];
- const groups=new Map(), zoom=map.getZoom(), cell=zoom<11?48:1;
+ overlay.replaceChildren();
+ const groups=new Map(),zoom=map.getZoom(),cell=zoom<11?48:1;
  for(const v of data){
- if(!enabled.has(v.type)||!Number.isFinite(v.longitude)||!Number.isFinite(v.latitude))continue;
- const p=map.project([v.longitude,v.latitude]);
+ if(!enabled.has(v.type)||v.longitude==null||v.latitude==null)continue;
+ const lon=Number(v.longitude),lat=Number(v.latitude);
+ if(!Number.isFinite(lon)||!Number.isFinite(lat))continue;
+ const p=map.project([lon,lat]);
+ if(p.x<0||p.y<0||p.x>overlay.clientWidth||p.y>overlay.clientHeight)continue;
  const k=(v.type==='ship'?'ship':'air')+':'+Math.floor(p.x/cell)+':'+Math.floor(p.y/cell);
- if(!groups.has(k))groups.set(k,[]);groups.get(k).push(v);
+ if(!groups.has(k))groups.set(k,[]);groups.get(k).push({v,p,lon,lat});
  }
  for(const vs of groups.values()){
- const v=vs[0],el=document.createElement('div');el.className='marker';
- el.style.cssText='background:white;border:2px solid '+colors[v.type]+';color:'+colors[v.type]+';border-radius:50%;padding:4px;font-size:22px;line-height:1.2;cursor:pointer';
- el.textContent=vs.length>1?types[v.type]+' '+vs.length:types[v.type];
- const marker=new maplibregl.Marker({element:el}).setLngLat([v.longitude,v.latitude]);
- if(vs.length>1)el.addEventListener('click',()=>map.easeTo({center:[v.longitude,v.latitude],zoom:Math.min(14,zoom+2)}));
- else {const info=document.createElement('div');info.textContent=(v.label||v.id)+' · '+v.type+' · '+(v.speed_kmh??'—')+' km/h';marker.setPopup(new maplibregl.Popup().setDOMContent(info));}
- markers.push(marker.addTo(map));
+ const {v,p,lon,lat}=vs[0],el=document.createElement('button');
+ el.style.left=p.x+'px';el.style.top=p.y+'px';el.style.color=colors[v.type];el.style.borderColor=colors[v.type];
+ el.textContent=types[v.type]+(vs.length>1?' '+vs.length:'');
+ el.title=v.label||v.id;
+ el.onclick=()=>{if(vs.length>1)map.easeTo({center:[lon,lat],zoom:Math.min(14,zoom+2)});else{const info=document.createElement('div');info.textContent=(v.label||v.id)+' · '+(v.speed_kmh??'—')+' km/h';new maplibregl.Popup().setLngLat([lon,lat]).setDOMContent(info).addTo(map);}};
+ overlay.appendChild(el);
  }
+ document.getElementById('render-count').textContent=' · Visible markers: '+overlay.childElementCount;
 }
-map.on('moveend',draw);
-map.on('style.load',draw);
+map.on('move',draw);map.on('resize',draw);map.on('load',draw);
 let timer,controller;
 async function refresh(){
  const seq=++generation;
