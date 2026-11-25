@@ -222,12 +222,12 @@ async def map_vehicles(south: float = Query(ge=-90,le=90), north: float = Query(
     ships = [v for at,v in list(ais_positions.values()) if time.time()-at<=600 and inside(v)]
     aircraft = []
     air_status = "unavailable"
-    if width<=12 and north-south<=8:
+    if width<=35 and north-south<=15:
         radius = min(250,max(25,math.ceil(math.hypot((north-south)*30,width*30*math.cos(math.radians(lat)))/25)*25))
         try:
             async with _lock:
                 aircraft = await fetch_aircraft(lat,lon,radius,(round(lat,1),round(lon,1),radius))
-            air_status = "regional"
+            air_status = "regional" if radius<250 else "regional_center_coverage"
         except HTTPException:
             pass
     else:
