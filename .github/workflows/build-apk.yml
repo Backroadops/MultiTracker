@@ -47,7 +47,9 @@ jobs:
             gradle :app:assembleDebug --stacktrace
           fi
       - uses: actions/upload-artifact@v4
+        if: github.ref != 'refs/heads/main' && github.event_name == 'workflow_dispatch'
         with:
+          retention-days: 7
           name: MultiTracker-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
 
