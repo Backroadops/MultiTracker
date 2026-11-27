@@ -53,10 +53,13 @@ jobs:
           name: MultiTracker-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
 
+      - name: Verify release APK exists
+        run: test -s app/build/outputs/apk/debug/app-debug.apk
+
       - name: Publish versioned APK
         if: success() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp android/app/build/outputs/apk/debug/*.apk "$RUNNER_TEMP/MultiTracker.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/MultiTracker.apk"
           gh release create "android-build-${GITHUB_RUN_NUMBER}" "$RUNNER_TEMP/MultiTracker.apk" --target "$GITHUB_SHA" --generate-notes --latest
